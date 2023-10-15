@@ -1,6 +1,6 @@
 module github.com/codeindex2937/oojson
 
-go 1.21.0
+go 1.18
 
 require (
 	github.com/fatih/structtag v1.2.0
