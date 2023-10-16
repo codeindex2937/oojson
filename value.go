@@ -30,6 +30,7 @@ type Value struct {
 	Objects             int
 	Strings             int
 	Times               int // time.Time is an implicit more specific type than string.
+	TimestampFormat     string
 	ArrayElements       *Value
 	AllObjectProperties *Value
 	ObjectProperties    map[string]*Value
@@ -87,8 +88,12 @@ func (v *Value) Observe(a any) *Value {
 			v.Emptys++
 		}
 		if v.Times == v.Strings {
-			if _, err := time.Parse(time.RFC3339Nano, a); err == nil {
-				v.Times++
+			for _, f := range TimestampFormats {
+				if _, err := time.Parse(f, a); err == nil {
+					v.Times++
+					v.TimestampFormat = f
+					break
+				}
 			}
 		}
 		v.Strings++

@@ -58,13 +58,13 @@ func GetGoType(v *Value, observations int, options *GoOption) (string, bool) {
 	case distinctTypes == 2 && v.Float64s > 0 && v.Ints > 0:
 		omitEmpty := v.Float64s+v.Ints < observations && v.Emptys == 0
 		if options.useJSONNumber {
-			options.imports["encoding/json"] = struct{}{}
+			options.Imports["encoding/json"] = struct{}{}
 			return "json.Number", omitEmpty
 		}
 		return "float64", omitEmpty
 	case distinctTypes == 3 && v.Float64s > 0 && v.Ints > 0 && v.Nulls > 0:
 		if options.useJSONNumber {
-			options.imports["encoding/json"] = struct{}{}
+			options.Imports["encoding/json"] = struct{}{}
 			return "*json.Number", false
 		}
 		return "*float64", false
@@ -146,12 +146,12 @@ func GetGoType(v *Value, observations int, options *GoOption) (string, bool) {
 			return "*" + b.String(), v.Objects+v.Nulls < observations
 		}
 	case distinctTypes == 1 && v.Strings > 0 && v.Times == v.Strings:
-		options.imports["time"] = struct{}{}
+		options.Imports["time"] = struct{}{}
 		return "time.Time", v.Times < observations
 	case distinctTypes == 1 && v.Strings > 0:
 		return "string", v.Strings < observations && v.Emptys == 0
 	case distinctTypes == 2 && v.Strings > 0 && v.Nulls > 0 && v.Times == v.Strings:
-		options.imports["time"] = struct{}{}
+		options.Imports["time"] = struct{}{}
 		return "*time.Time", false
 	case distinctTypes == 2 && v.Strings > 0 && v.Nulls > 0:
 		return "*string", false

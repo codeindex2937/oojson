@@ -2,6 +2,7 @@ package oojson
 
 import (
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/fatih/camelcase"
@@ -10,13 +11,15 @@ import (
 
 type GoOption struct {
 	exportNameFunc            ExportNameFunc
-	imports                   map[string]struct{}
+	Imports                   map[string]struct{}
+	RegexpValidators          map[string]string
 	intType                   string
 	omitEmptyOption           OmitEmptyOption
 	skipUnparseableProperties bool
 	structTagNames            []string
 	useJSONNumber             bool
 	exportRenames             map[string]string
+	timestampFormats          []string
 }
 
 var (
@@ -37,9 +40,24 @@ var (
 	}
 )
 
+var TimestampFormats = []string{
+	time.RFC3339Nano,
+	time.DateTime,
+	time.Layout,
+	time.RFC3339,
+	time.DateOnly,
+	"2006-01-02T15:04:05Z",
+	"2006-01-02T15:04:05.999Z",
+	"2006/01/02",
+	"2006/01/02 15:04:05",
+}
+
 func DefaultGoOption() *GoOption {
 	opt := &GoOption{
-		imports:                   make(map[string]struct{}),
+		Imports: map[string]struct{}{
+			"github.com/go-playground/validator/v10": {},
+		},
+		RegexpValidators:          map[string]string{},
 		intType:                   "int",
 		omitEmptyOption:           OmitEmptyAuto,
 		skipUnparseableProperties: true,
