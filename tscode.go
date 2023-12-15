@@ -99,7 +99,7 @@ func GetTsType(v *Value, name string, indent string, options *TsOption) (string,
 		b := &bytes.Buffer{}
 		properties := maps.Keys(v.ObjectProperties)
 		sort.Strings(properties)
-		fmt.Fprintf(b, "type %v = {[key: string]: {\n", name)
+		fmt.Fprintf(b, "type %v = {\n", name)
 		var unparseableProperties []string
 		for _, property := range properties {
 			if isUnparseableProperty(property) {
@@ -113,7 +113,7 @@ func GetTsType(v *Value, name string, indent string, options *TsOption) (string,
 			}
 			fmt.Fprintf(b, "%v%s: %s;\n", indent, strcase.ToLowerCamel(property), subClassType)
 		}
-		fmt.Fprintf(b, "}}\n\n")
+		fmt.Fprintf(b, "}\n\n")
 
 		for _, property := range unparseableProperties {
 			fmt.Fprintf(b, "// %q cannot be unmarshalled into a struct field by encoding/json.\n", property)
