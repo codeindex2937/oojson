@@ -3,15 +3,39 @@ package oojson
 import (
 	"bytes"
 	"fmt"
-	"sort"
+	"go/ast"
+	"go/token"
 	"strings"
+
+	"go/printer"
 
 	"github.com/fatih/structtag"
 	"golang.org/x/exp/maps"
 )
 
+var stringIdent = ast.NewIdent("string")
+var boolIdent = ast.NewIdent("bool")
+var float64Ident = ast.NewIdent("float64")
+var jsonNumberIdent = ast.NewIdent("json.Number")
+var timeIdent = ast.NewIdent("time.Time")
+var anyIdent = ast.NewIdent("any")
+var emptyStructIdent = ast.NewIdent("struct{}")
+var stringPointerIdent = &ast.StarExpr{X: stringIdent}
+var boolPointerIdent = &ast.StarExpr{X: boolIdent}
+var float64PointerIdent = &ast.StarExpr{X: float64Ident}
+var jsonNumberPointerIdent = &ast.StarExpr{X: jsonNumberIdent}
+var timePointerIdent = &ast.StarExpr{X: timeIdent}
+var emptyStructPointerIdent = &ast.StarExpr{X: emptyStructIdent}
+
 // goType returns the Go type of v.
-func GetGoType(v *Value, observations int, options *GoOption) (string, bool) {
+func GetGoType(v *Value, options *GoOption) string {
+	goType, _ := GetGoAst(v, 0, options)
+	buf := bytes.NewBuffer([]byte{})
+	printer.Fprint(buf, token.NewFileSet(), goType)
+	return buf.String()
+}
+
+func GetGoAst(v *Value, observations int, options *GoOption) (ast.Expr, bool) {
 	// Determine the number of distinct types observed.
 	distinctTypes := 0
 	if v.Arrays > 0 {
@@ -41,70 +65,78 @@ func GetGoType(v *Value, observations int, options *GoOption) (string, bool) {
 	case distinctTypes == 1 && v.Arrays > 0:
 		fallthrough
 	case distinctTypes == 2 && v.Arrays > 0 && v.Nulls > 0:
-		elementGoType, _ := GetGoType(v.ArrayElements, 0, options)
-		return "[]" + elementGoType, v.Arrays+v.Nulls < observations && v.Emptys == 0
+		elementGoType, _ := GetGoAst(v.ArrayElements, 0, options)
+		return &ast.ArrayType{Lbrack: token.NoPos, Elt: elementGoType}, v.Arrays+v.Nulls < observations && v.Emptys == 0
 	case distinctTypes == 1 && v.Bools > 0:
-		return "bool", v.Bools < observations && v.Emptys == 0
+		return boolIdent, v.Bools < observations && v.Emptys == 0
 	case distinctTypes == 2 && v.Bools > 0 && v.Nulls > 0:
-		return "*bool", false
+		return boolPointerIdent, false
 	case distinctTypes == 1 && v.Float64s > 0:
-		return "float64", v.Float64s < observations && v.Emptys == 0
+		return float64Ident, v.Float64s < observations && v.Emptys == 0
 	case distinctTypes == 2 && v.Float64s > 0 && v.Nulls > 0:
-		return "*float64", false
+		return float64PointerIdent, false
 	case distinctTypes == 1 && v.Ints > 0:
-		return options.intType, v.Ints < observations && v.Emptys == 0
+		return ast.NewIdent(options.intType), v.Ints < observations && v.Emptys == 0
 	case distinctTypes == 2 && v.Ints > 0 && v.Nulls > 0:
-		return "*" + options.intType, false
+		return &ast.StarExpr{X: ast.NewIdent(options.intType)}, false
 	case distinctTypes == 2 && v.Float64s > 0 && v.Ints > 0:
 		omitEmpty := v.Float64s+v.Ints < observations && v.Emptys == 0
 		if options.useJSONNumber {
 			options.Imports["encoding/json"] = struct{}{}
-			return "json.Number", omitEmpty
+			return jsonNumberIdent, omitEmpty
 		}
-		return "float64", omitEmpty
+		return float64Ident, omitEmpty
 	case distinctTypes == 3 && v.Float64s > 0 && v.Ints > 0 && v.Nulls > 0:
 		if options.useJSONNumber {
 			options.Imports["encoding/json"] = struct{}{}
-			return "*json.Number", false
+			return jsonNumberPointerIdent, false
 		}
-		return "*float64", false
+		return float64PointerIdent, false
 	case distinctTypes == 1 && v.Objects > 0:
 		fallthrough
 	case distinctTypes == 2 && v.Objects > 0 && v.Nulls > 0:
 		if len(v.ObjectProperties) == 0 {
 			switch {
 			case observations == 0 && v.Nulls == 0:
-				return "struct{}", false
+				return emptyStructIdent, false
 			case v.Nulls > 0:
-				return "*struct{}", false
+				return emptyStructPointerIdent, false
 			case v.Objects == observations:
-				return "struct{}", false
+				return emptyStructIdent, false
 			default:
-				return "*struct{}", v.Objects < observations
+				return emptyStructPointerIdent, v.Objects < observations
 			}
 		}
-		hasUnparseableProperties := false
+		hasUnparsableProperties := false
 		for k := range v.ObjectProperties {
 			if strings.ContainsRune(k, ' ') {
-				hasUnparseableProperties = true
+				hasUnparsableProperties = true
 				break
 			}
 		}
-		if hasUnparseableProperties && !options.skipUnparseableProperties {
-			valueGoType, _ := GetGoType(v.AllObjectProperties, 0, options)
-			return "map[string]" + valueGoType, v.Objects+v.Nulls < observations
+		if hasUnparsableProperties && !options.skipUnparseableProperties {
+			valueGoType, _ := GetGoAst(v.AllObjectProperties, 0, options)
+			return &ast.MapType{Map: token.NoPos, Key: stringIdent, Value: valueGoType}, v.Objects+v.Nulls < observations
 		}
-		b := &bytes.Buffer{}
+
+		structType := &ast.StructType{
+			Struct: token.NoPos,
+			Fields: &ast.FieldList{
+				Opening: token.NoPos,
+				Closing: token.NoPos,
+				List:    []*ast.Field{},
+			},
+		}
+
 		properties := maps.Keys(v.ObjectProperties)
-		sort.Strings(properties)
-		fmt.Fprintf(b, "struct {\n")
-		var unparseableProperties []string
+		var unparsableProperties []string
 		for _, property := range properties {
-			if isUnparseableProperty(property) {
-				unparseableProperties = append(unparseableProperties, property)
+			if isUnparsableProperty(property) {
+				unparsableProperties = append(unparsableProperties, property)
 				continue
 			}
-			goType, observedEmpty := GetGoType(v.ObjectProperties[property], v.Objects, options)
+
+			goType, observedEmpty := GetGoAst(v.ObjectProperties[property], v.Objects, options)
 			var omitEmpty bool
 			switch {
 			case options.omitEmptyOption == OmitEmptyNever:
@@ -129,38 +161,54 @@ func GetGoType(v *Value, observations int, options *GoOption) (string, bool) {
 				_ = tags.Set(tag)
 			}
 
-			fmt.Fprintf(b, "%s %s `%s`\n", options.exportNameFunc(property), goType, tags)
+			f := &ast.Field{
+				Names: []*ast.Ident{ast.NewIdent(property)},
+				Type:  goType,
+				Tag:   &ast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("`%v`", tags.String())},
+			}
+			structType.Fields.List = append(structType.Fields.List, f)
 		}
-		for _, property := range unparseableProperties {
-			fmt.Fprintf(b, "// %q cannot be unmarshalled into a struct field by encoding/json.\n", property)
+
+		unparsableComments := &ast.CommentGroup{}
+		for _, property := range unparsableProperties {
+			unparsableComments.List = append(unparsableComments.List, &ast.Comment{
+				Slash: token.NoPos,
+				Text:  fmt.Sprintf("// %q cannot be unmarshalled into a struct field by encoding/json.", property),
+			})
 		}
-		fmt.Fprintf(b, "}")
+		if len(unparsableProperties) > 0 {
+			structType.Fields.List = append(structType.Fields.List, &ast.Field{
+				Type:    ast.NewIdent(""),
+				Comment: unparsableComments,
+			})
+		}
+
 		switch {
 		case observations == 0:
-			return b.String(), false
+			return structType, false
 		case v.Objects == observations:
-			return b.String(), false
+			return structType, false
 		case v.Objects < observations && v.Nulls == 0:
-			return "*" + b.String(), true
+			return &ast.StarExpr{X: structType}, true
 		default:
-			return "*" + b.String(), v.Objects+v.Nulls < observations
+			return &ast.StarExpr{X: structType}, v.Objects+v.Nulls < observations
 		}
 	case distinctTypes == 1 && v.Strings > 0 && v.Times == v.Strings:
 		options.Imports["time"] = struct{}{}
-		return "time.Time", v.Times < observations
+		return timeIdent, v.Times < observations
 	case distinctTypes == 1 && v.Strings > 0:
-		return "string", v.Strings < observations && v.Emptys == 0
+		return stringIdent, v.Strings < observations && v.Emptys == 0
 	case distinctTypes == 2 && v.Strings > 0 && v.Nulls > 0 && v.Times == v.Strings:
 		options.Imports["time"] = struct{}{}
-		return "*time.Time", false
+		return timePointerIdent, false
 	case distinctTypes == 2 && v.Strings > 0 && v.Nulls > 0:
-		return "*string", false
+		return stringPointerIdent, false
 	default:
-		return "any", v.Arrays+v.Bools+v.Float64s+v.Ints+v.Nulls+v.Objects+v.Strings < observations
+		return anyIdent, v.Arrays+v.Bools+v.Float64s+v.Ints+v.Nulls+v.Objects+v.Strings < observations
 	}
 }
 
-// isUnparseableProperty returns true if key cannot be parsed by encoding/json.
-func isUnparseableProperty(key string) bool {
+// isUnparsableProperty returns true if key cannot be parsed by encoding/json.
+func isUnparsableProperty(key string) bool {
 	return strings.ContainsAny(key, ` ",`)
 }

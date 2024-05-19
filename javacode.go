@@ -106,7 +106,7 @@ func GetJavaType(v *Value, name string, indent string, options *JavaOption) (str
 		fmt.Fprintf(b, "class %v {\n", name)
 		var unparseableProperties []string
 		for _, property := range properties {
-			if isUnparseableProperty(property) {
+			if isUnparsableProperty(property) {
 				unparseableProperties = append(unparseableProperties, property)
 				continue
 			}

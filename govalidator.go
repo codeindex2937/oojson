@@ -138,7 +138,7 @@ func GetGoValidator(v *Value, observations int, options *GoOption) (string, map[
 		fmt.Fprintf(b, "struct {\n")
 		var unparseableProperties []string
 		for _, property := range properties {
-			if isUnparseableProperty(property) {
+			if isUnparsableProperty(property) {
 				unparseableProperties = append(unparseableProperties, property)
 				continue
 			}

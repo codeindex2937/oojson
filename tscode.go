@@ -102,7 +102,7 @@ func GetTsType(v *Value, name string, indent string, options *TsOption) (string,
 		fmt.Fprintf(b, "type %v = {\n", name)
 		var unparseableProperties []string
 		for _, property := range properties {
-			if isUnparseableProperty(property) {
+			if isUnparsableProperty(property) {
 				unparseableProperties = append(unparseableProperties, property)
 				continue
 			}
