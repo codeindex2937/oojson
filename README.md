@@ -1,6 +1,6 @@
 # oojson
 
-Generate code from JSON
+Generate data object code from JSON
 
 ## Example
 
